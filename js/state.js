@@ -268,9 +268,10 @@ export function loadState() {
     return:   sanitizeRecords(d.return)
   };
 
-  // 2. Period mode
-  const savedMode = safeParseString('spx_period_mode', 'month');
-  state.periodMode = (savedMode === 'day' || savedMode === 'month') ? savedMode : 'month';
+  // 2. Period mode — chế độ "ngày" đã bỏ khỏi UI; ép về 'month' để máy còn giá trị 'day'
+  //    từ bản cũ không bị kẹt ở chế độ lọc theo ngày mà không có nút để thoát.
+  state.periodMode = 'month';
+  try { localStorage.setItem('spx_period_mode', 'month'); } catch {}
 
   // 3. currentMonth — validate format
   const savedMonth = safeParseString('spx_current_month', '');

@@ -1,9 +1,9 @@
-import { state } from './state.js';
+import { state, persistData } from './state.js';
 import { WEIGHT_KEYS, WEIGHT_SUFFIXES } from './config.js';
 import { sanitizeInt, generateId, getTodayIso, formatDateDisplay, deepClone, isValidIsoDate } from './utils.js';
 import { closeModal, showToast } from './ui.js';
 import { updateAllViews } from './render.js';
-import { hasBatchPending, backToBatch } from './ocr.js';
+import { hasBatchPending, backToBatch, completeActiveBatchItem } from './ocr.js';
 import { showAlert, showConfirm, showChoice } from './dialog.js';
 import { downloadBackupFile } from './backup.js';
 
@@ -32,7 +32,6 @@ export async function saveRecord() {
 
   const editId   = document.getElementById('editEntryId').value;
   const editType = document.getElementById('editEntryType').value;
-  const wasFromBatch = hasBatchPending();
 
   if (editId && editType) {
     // === SỬA ===
@@ -41,6 +40,16 @@ export async function saveRecord() {
                  : editType === 'pickup'   ? 'pick_inp'
                  : 'ret_inp';
     const weights = parseWeights(prefix);
+
+    // Không cho lưu bản ghi toàn số 0 (sẽ thành bản ghi "ma" trong nhật ký)
+    if (Object.values(weights).reduce((a, b) => a + b, 0) === 0) {
+      await showAlert(
+        'Bản ghi này không còn đơn nào.\n\nNếu muốn bỏ bản ghi, hãy bấm Xóa trong Nhật ký.',
+        { title: 'Thiếu dữ liệu', okText: 'Đóng' }
+      );
+      return;
+    }
+
     const idx = state.appData[editType].findIndex(it => it.id === numId);
     if (idx === -1) {
       await showAlert('Không tìm thấy bản ghi để cập nhật.', { title: 'Lỗi', okText: 'Đóng' });
@@ -105,11 +114,16 @@ export async function saveRecord() {
     }
   }
 
+  // Nếu form này mở từ 1 ảnh trong batch OCR → bỏ ảnh đó khỏi batch (đã lưu xong)
+  // TRƯỚC khi đóng modal (closeModal sẽ hủy liên kết ảnh batch)
+  const fromBatch = completeActiveBatchItem();
+
   closeModal(true);
   updateAllViews();
 
-  if (wasFromBatch) {
-    setTimeout(() => backToBatch(), 200);
+  if (fromBatch) {
+    if (hasBatchPending()) setTimeout(() => backToBatch(), 200);
+    else showToast('Đã xử lý xong tất cả ảnh', 'success', 2200);
   }
 }
 
@@ -188,8 +202,11 @@ export async function clearAllHistory() {
   //  Tiến hành xóa
   // ═══════════════════════════════════════════════════════════
   state.appData = { delivery: [], pickup: [], return: [] };
-  localStorage.removeItem('spx_backup_vault');
-  localStorage.removeItem('spx_dual_records');
+  try {
+    localStorage.removeItem('spx_backup_vault');
+    localStorage.removeItem('spx_dual_records');
+  } catch {}
+  persistData();      // ghi NGAY (không chờ debounce) → thoát app sớm cũng không "sống lại" dữ liệu cũ
   updateAllViews();
 
   // Toast xác nhận

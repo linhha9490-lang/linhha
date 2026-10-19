@@ -348,7 +348,7 @@ function _cleanLegacyLocalStorage() {
 /**
  * Init — gọi 1 lần khi app khởi động.
  * - Mở IDB
- * - Dọn cache localStorage cũ
+ * - Dọn cache localStorage cũ (không migrate)
  */
 export async function initOcrCache() {
   if (_migrationDone) return;
@@ -357,56 +357,13 @@ export async function initOcrCache() {
   try {
     await openDB();
 
-    // Migration: đọc cache từ localStorage cũ → chuyển sang IDB
-    await _migrateFromLocalStorage();
-
-    // Sau migration, dọn sạch localStorage
+    // Cache localStorage đời cũ được tạo bởi parser cũ → KHÔNG chuyển sang IDB
+    // (nếu chuyển, kết quả cũ sẽ mang nhãn phiên bản hiện tại và bị coi là hợp lệ). Chỉ dọn bỏ.
     _cleanLegacyLocalStorage();
 
     console.log('[OcrCache] Đã khởi tạo IDB cache');
   } catch (e) {
     console.warn('[OcrCache] Init fail — fallback RAM-only:', e);
-  }
-}
-
-async function _migrateFromLocalStorage() {
-  const LS_PREFIX = 'spx_ocr_ls_';
-  const LS_INDEX = 'spx_ocr_ls_index';
-
-  let index = [];
-  try {
-    const raw = localStorage.getItem(LS_INDEX);
-    if (raw) index = JSON.parse(raw);
-  } catch {}
-
-  if (!Array.isArray(index) || index.length === 0) return;
-
-  let migrated = 0;
-
-  for (const fullKey of index) {
-    try {
-      const raw = localStorage.getItem(LS_PREFIX + fullKey);
-      if (!raw) continue;
-
-      const value = JSON.parse(raw);
-      if (!value) continue;
-
-      // fullKey có dạng "v1b-3_<hash>" → strip version cũ, thêm version mới
-      const hashPart = fullKey.split('_').slice(1).join('_');
-      if (!hashPart) continue;
-
-      const newKey = _cacheKey(hashPart);
-
-      await _dbSet(newKey, value);
-      _memSet(newKey, value);
-      migrated++;
-    } catch (e) {
-      // Ignore entry lỗi, tiếp tục entry khác
-    }
-  }
-
-  if (migrated > 0) {
-    console.log(`[OcrCache] Migration: ${migrated}/${index.length} entries`);
   }
 }
 

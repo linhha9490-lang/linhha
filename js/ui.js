@@ -586,6 +586,7 @@ export async function closeModal(force) {
   document.getElementById('entryModal').classList.remove('active');
   state.isOcrScan = false;
   state.lastOcrImageDataUrl = '';
+  window.dispatchEvent(new Event('spx:entry-closed'));
 }
 
 // ================ MENU MODAL ================

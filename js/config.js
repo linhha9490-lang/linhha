@@ -168,4 +168,4 @@ export const STORAGE_KEYS = {
 // Version của pipeline OCR (parser + preprocess + post-process).
 // Đổi giá trị này khi parser thay đổi → tự động invalidate toàn bộ cache OCR cũ.
 // Format cache key: `${OCR_CACHE_VERSION}-${OCR_PIPELINE_VERSION}_<hash>`
-export const OCR_PIPELINE_VERSION = 'p1';
+export const OCR_PIPELINE_VERSION = 'p2';
