@@ -47,10 +47,11 @@
 
   "screenshots": [
     {
-      "src": "./icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "form_factor": "narrow"
+      "src": "./screenshots/screenshot-1.jpg",
+      "sizes": "1080x2460",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "SPX Tracker"
     }
   ],
 
