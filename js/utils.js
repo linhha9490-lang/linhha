@@ -1,6 +1,10 @@
 const _nf = new Intl.NumberFormat('vi-VN');
 export const _fmt = n => _nf.format(n);
 
+// ⭐ Format hiển thị tối đa 3 chữ số thập phân (giống hệt SPX)
+const _nf2 = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 });
+export const _fmt2 = n => _nf2.format(n);
+
 // ===== generateId không bao giờ trùng, tăng dần đơn điệu =====
 let _lastId = 0;
 export const generateId = () => {
@@ -14,7 +18,9 @@ export const generateId = () => {
 };
 
 export const sanitizeInt = v => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : 0; };
-export const formatPts   = n => _fmt(Math.round(n)) + ' Điểm';
+
+// ⭐ Bỏ Math.round() để giữ số lẻ
+export const formatPts   = n => _fmt2(n) + ' Điểm';
 
 export function getTodayIso() {
   const d = new Date();
@@ -72,9 +78,8 @@ export function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
-// Escape chuỗi trước khi chèn vào innerHTML (tên file, thông báo lỗi... — mọi dữ liệu không phải số)
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
   }[c]));
 }
