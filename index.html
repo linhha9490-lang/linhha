@@ -232,16 +232,32 @@
               <div class="taixe-banner-sub" id="taixeBannerSub">Còn thiếu 1,112 đơn</div>
             </div>
 
+            <!-- ⭐ ĐÃ CẬP NHẬT GIAO DIỆN CHIA 3 DÒNG Y NHƯ SPX -->
             <div class="income-summary-box">
-              <div class="income-summary-line">
-                <span>Lương 1 công</span>
-                <span id="incomePerDayText">0 Điểm/công</span>
+              <!-- Dòng 1: Ngày công -->
+              <div class="income-summary-line" style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:12.5px;">
+                <span>Điểm ngày công</span>
+                <span id="incomeDetailBase" style="font-weight:700; color:var(--text-1); font-family:'JetBrains Mono', monospace">0</span>
               </div>
-              <div class="income-summary-line total">
-                <span>Đã tích lũy</span>
-                <b id="incomeTotalDisplayInner">+0 Điểm</b>
+              <!-- Dòng 2: Bưu cục -->
+              <div class="income-summary-line" style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:12.5px;">
+                <span>Điểm KC bưu cục</span>
+                <span id="incomeDetailBuuCuc" style="font-weight:700; color:var(--text-1); font-family:'JetBrains Mono', monospace">0</span>
+              </div>
+              <!-- Dòng 3: Tài xế -->
+              <div class="income-summary-line" style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:12.5px;">
+                <span>Điểm KC tài xế</span>
+                <span id="incomeDetailTaiXe" style="font-weight:700; color:var(--text-1); font-family:'JetBrains Mono', monospace">0</span>
+              </div>
+              
+              <!-- Dòng Tổng -->
+              <div class="income-summary-line total" style="border-top:1px dashed var(--border); padding-top:10px; margin-bottom:0; padding-bottom:0;">
+                <span style="color:var(--text-2)">Đã tích lũy</span>
+                <b id="incomeTotalDisplayInner" style="color:var(--accent); font-size:16px;">+0 Điểm</b>
               </div>
             </div>
+            <!-- ⭐ KẾT THÚC CẬP NHẬT -->
+
             <button class="btn btn-primary income-save-btn" onclick="forceSaveConfig()">Lưu cấu hình tháng này</button>
           </div>
         </details>
