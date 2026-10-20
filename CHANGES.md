@@ -1,33 +1,46 @@
-# SPX Tracker — bản vá v2
+# SPX Tracker — v2.1
 
-Thay toàn bộ file trong gói này vào repo (giữ nguyên đường dẫn), rồi deploy.
-`sw.js` đã bump `CACHE` → `spx-tracker-v2`, `version.json` → `v2`, `OCR_PIPELINE_VERSION` → `p2`
-(cache OCR cũ tự bị bỏ).
+Bản đầy đủ: giải nén rồi thay toàn bộ vào repo. `CACHE` → `spx-tracker-v2.1`, `version.json` → `v2.1`
+(người dùng sẽ thấy banner cập nhật). `OCR_PIPELINE_VERSION` vẫn là `p2`.
 
-## Nhập / xóa dữ liệu
-- `index.html`: bỏ banner "Hoàn tác" (gọi `undoLast()` đã không còn → bấm là lỗi).
-- `backup.js`: hộp thoại nạp dữ liệu có 3 nút (Hủy / Thêm vào / Ghi đè); chạm ra ngoài hoặc Esc = HỦY
-  (trước đây bị hiểu là "Thêm vào"). Dùng chung `runImport()` cho dán JSON, chọn file và Cloud.
-- `backup.js`: file sai định dạng (`null`, `[]`…) hoặc 0 bản ghi → báo lỗi, không đụng dữ liệu hiện tại.
-- `backup.js`: nạp "Thêm vào" cấp id mới cho bản ghi trùng id (trước đây Sửa/Xóa luôn trúng bản đầu tiên).
-- `backup.js`: settings từ file/Cloud được chuẩn hoá (theme chỉ light/dark, salary/rank đúng kiểu, bonus ≤ 1).
-- `cloud.js`: auto-backup KHÔNG đẩy dữ liệu rỗng lên Gist; backup tay khi rỗng phải xác nhận.
-- `cloud.js`: token mới chỉ được lưu sau khi dùng được; hỗ trợ Gist > 1MB (`raw_url`); chống backup chồng nhau.
-- `entry.js`: sửa bản ghi không cho lưu toàn số 0; "Xóa toàn bộ" ghi xuống ngay (không chờ debounce).
-- `state.js`: ép `periodMode='month'` (máy còn giá trị `day` từ bản cũ không bị kẹt).
+## Chạy test
+```
+npm test          # = node --test tests/*.test.mjs   (cần Node ≥ 20, không cài thêm gói nào)
+```
+73 test, ~1 giây. Gồm: tiện ích, bảng điểm + tra điểm, sanitize/lưu trữ, nạp/backup dữ liệu, Cloud, nhập/xóa bản ghi,
+OCR (ngày, dải cân, sửa chữ số, lô ảnh) và kiểm tra nhất quán cả repo (import/export, onclick ↔ window,
+danh sách file của Service Worker, version ↔ CACHE, kích thước icon/ảnh trong manifest).
+Khi sửa `sw.js`/file trong `CORE` mà quên bump `CACHE`, hoặc đổi tên một hàm đang được import, `npm test` sẽ báo đỏ.
 
-## OCR
-- Ngày: phải là ngày thật (không còn lưu "31/04" rồi mất khi tải lại), "30/12" đọc đầu năm → năm trước,
-  cặp dải cân kiểu "2-4" không bị nhận là ngày; tự lưu chặn ngày tương lai.
-- Parser: số có 0 đứng đầu ("06-10") không bị coi là dải cân (trước đây làm lệch số liệu).
-- Sửa chữ số đoán: chỉ sửa khi có đúng 1 cách khớp tổng; nhiều cách → để người dùng đối chiếu.
-- Quét nhiều ảnh: 1 ảnh lỗi không làm hỏng cả lô; nút Hủy dừng hẳn job Tesseract.
-- Lượt quét: nếu lượt 1 chưa đọc được "Tổng" vẫn thử thêm (tối đa 3 lượt); chấm lại kết quả cũ khi đọc được Tổng.
-- Lô ảnh: lưu xong từng ảnh thì ảnh rời lô (không còn bật lại modal lô mãi); "Lưu tất cả" giữ lại ảnh
-  nghi ngờ / ngày sai / cùng ngày khác số / ảnh lỗi thay vì xóa im lặng.
-- Cache: chỉ cache kết quả đã đối chiếu khớp; bỏ migration từ localStorage đời cũ.
-- Ảnh lớn: giới hạn diện tích canvas (tránh canvas rỗng trên iOS), giải phóng bộ nhớ sau mỗi lượt.
-- `sw.js`: Tesseract (worker, core, dữ liệu tiếng Việt) được cache lúc chạy theo đúng URL thật → OCR offline.
+## Mới trong v2.1
+- **Ngày OCR dạng ISO** (`2026-10-17`) được đọc đúng (trước đây thành `26-10-17` → bị loại).
+- **Sửa lỗi của chính v2:** ngày dính chữ do OCR (`Giao06/10`) bị hụt vì dùng `\b` → đã đổi sang kiểm chữ số liền kề.
+- **Banner cảnh báo "đã sửa số" không còn dính lại** khi mở form nhập/sửa thủ công sau một lần OCR.
+- `entry.js`: có `editId` nhưng thiếu loại bản ghi → báo lỗi thay vì tạo bản ghi rác.
+- `calc.js`: tra điểm với giá trị âm/NaN/< dòng đầu không còn rơi vào dòng cuối (điểm cao nhất).
+- Tesseract ghim `5.1.1` (đổi ở `TESSERACT_LIB_URL` trong `ocr.js` và `TESS_RUNTIME_URLS` trong `sw.js`).
+- Gom hằng số vào `config.js`: `TAIXE_ORDER_THRESHOLD`, `AUTO_BACKUP_DAYS`, `OCR_TIMEOUT_MS`, `MAX_CANVAS_PX`.
+- `escapeHtml` chuyển sang `utils.js` (dùng chung).
+- Dọn code chết: `setOverviewFilter`, `updateThemeBtnUI`, `clearAllConfidenceHighlights` (bản ocr.js),
+  tham số thừa của `showFixWarning`, nhãn `#currentBonusPctLabel` không tồn tại.
 
-## Manifest
-- `screenshots` dùng ảnh bạn gửi (`screenshots/screenshot-1.jpg`, 1080×2460).
+## Đã có từ v2
+### Nhập / xóa dữ liệu
+- Bỏ banner "Hoàn tác" hỏng (`undoLast`). Hộp thoại nạp 3 nút Hủy / Thêm vào / Ghi đè; chạm ra ngoài = HỦY.
+- `runImport()` dùng chung cho dán JSON, chọn file, Cloud: sai định dạng / 0 bản ghi → báo lỗi, không đụng dữ liệu.
+- Nạp "Thêm vào" cấp id mới cho bản ghi trùng id. Settings từ file/Cloud được chuẩn hoá.
+- Cloud: auto-backup không đẩy dữ liệu rỗng; token chỉ lưu sau khi dùng được; hỗ trợ Gist > 1MB (`raw_url`).
+- Sửa bản ghi không cho lưu toàn số 0; "Xóa toàn bộ" ghi ngay; `periodMode` ép về `month`.
+### OCR
+- Ngày phải là ngày thật, "30/12" đọc đầu năm → năm trước, dải cân không bị nhận nhầm là ngày; tự lưu chặn ngày tương lai.
+- Số có 0 đứng đầu ("06-10") không bị coi là dải cân. Sửa chữ số đoán chỉ khi có đúng 1 nghiệm.
+- Một ảnh lỗi không làm hỏng cả lô; Hủy dừng hẳn job Tesseract; lượt 1 chưa đọc được "Tổng" vẫn thử thêm.
+- Lô ảnh: lưu xong từng ảnh thì ảnh rời lô; "Lưu tất cả" giữ lại ảnh cần xem thay vì xóa im lặng.
+- Cache OCR chỉ lưu kết quả đã khớp tổng; bỏ migration từ localStorage cũ. Ảnh lớn: trần diện tích canvas.
+- `sw.js`: Tesseract (worker, core, dữ liệu tiếng Việt) được cache lúc chạy theo URL thật → OCR offline.
+### Manifest
+- `screenshots` dùng `screenshots/screenshot-1.jpg` (1080×2460).
+
+## Chưa làm (cố ý)
+- Tách `ocr.js` / `main.js`, gộp `showChoice` vào `_openDialog`: nên làm tiếp, giờ đã có test để refactor an toàn.
+- Chưa kiểm chứng trên trình duyệt/điện thoại thật: OCR offline, hủy OCR, giao diện hộp thoại. Test chạy trên DOM giả lập.

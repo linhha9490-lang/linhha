@@ -3,11 +3,11 @@
 // Cache: app shell (CACHE) + Tesseract (TESS_CACHE) + Share Target
 //
 // ⚠️ MỖI LẦN SỬA FILE TRONG CORE → BUMP CACHE VERSION
-//    - spx-tracker-v1 → spx-tracker-v2 → ...
+//    - spx-tracker-v2 → spx-tracker-v2.1 → ...   (tests/repo.test.mjs kiểm tra khớp với version.json)
 //    - TESS_CACHE và SHARE_CACHE KHÔNG cần bump (dữ liệu không đổi)
 // =============================================================
 
-const CACHE       = 'spx-tracker-v2';      // ⭐ v2 (đồng bộ version.json)
+const CACHE       = 'spx-tracker-v2.1';    // ⭐ v2.1 (đồng bộ version.json)
 const TESS_CACHE  = 'spx-tesseract-v1';    // giữ nguyên — Tesseract không đổi
 const SHARE_CACHE = 'spx-shared-files';    // giữ nguyên — dữ liệu tạm
 
@@ -43,7 +43,7 @@ const CORE = [
 // (vd tesseract.js@v5.x.x/...) nên URL "@5" cố định sẽ không bao giờ khớp. Thay vào đó mọi URL
 // thuộc TESS_URL_PREFIXES được cache lúc chạy (lần OCR online đầu tiên) → các lần sau chạy offline.
 const TESS_RUNTIME_URLS = [
-  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',   // phải trùng TESSERACT_LIB_URL trong ocr.js
   'https://tessdata.projectnaptha.com/4.0.0/vie.traineddata.gz'
 ];
 const TESS_URL_PREFIXES = [
