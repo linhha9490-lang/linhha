@@ -1,7 +1,8 @@
 import { state, persistData, getSalaryConfig, hasSalaryConfig, getRankConfig } from './state.js';
-import { WEIGHT_LABELS, WEIGHT_KEYS, TABLE_4_DATA, TABLE_5_DATA, TABLE_6_DATA, TAIXE_ORDER_THRESHOLD } from './config.js';
+import { WEIGHT_LABELS, WEIGHT_KEYS, TABLE_4_DATA, TABLE_5_DATA, TABLE_6_DATA } from './config.js';
 import { lookupTier, aggregateWeights, isDateInCurrentPeriod } from './calc.js';
-import { formatPts, formatDateDisplay, _fmt, getCurrentMonthIso, getTodayIso } from './utils.js';
+// ⭐ Import thêm _fmt2
+import { formatPts, formatDateDisplay, _fmt, _fmt2, getCurrentMonthIso, getTodayIso } from './utils.js';
 
 const NEED_HIGHLIGHT = 'color:#dc2626;font-size:1.35em;font-weight:900;letter-spacing:0.5px;';
 const TOP_OVERVIEW_COUNT = 4;
@@ -20,9 +21,6 @@ let _allOppFilter = 'del';
 let _allOppCache = [];
 
 // ============ History filters (đơn giản hóa) ============
-// Chỉ còn: { date, types }
-// - date: 'YYYY-MM-DD' hoặc null (null = theo tháng đang xem)
-// - types: { delivery, pickup, return }
 const DEFAULT_HIST_FILTERS = {
   date: null,
   types: { delivery: true, pickup: true, return: true }
@@ -70,21 +68,13 @@ export function hasActiveHistFilters() {
   return false;
 }
 
-/**
- * Filter 1 record theo state hiện tại.
- * - Nếu có `date` → chỉ khớp ngày đó.
- * - Nếu không → khớp period đang xem (tháng).
- */
 function recordPassesHistoryFilter(r, type) {
   if (!_histFilters.types[type]) return false;
-
   if (_histFilters.date) {
     return r.date === _histFilters.date;
   }
   return isDateInCurrentPeriod(r.date, state.periodMode, state.currentMonth, state.currentDate);
 }
-// ============ /History filters ============
-
 
 // ==================== REMINDER BANNER ====================
 function computeMissedDays() {
@@ -194,10 +184,11 @@ function getRegionThresholds(region) {
   return { full: 60, half: 30 };
 }
 
+// ⭐ ĐÃ CẬP NHẬT HỆ SỐ 25.99935 CỦA SPX
 function getSalaryDaysForPeriod() {
   const monthStr = state.currentMonth || getCurrentMonthIso();
   const month = parseInt(monthStr.split('-')[1], 10);
-  return month === 2 ? 24 : 26;
+  return month === 2 ? 23.999 : 25.99935; 
 }
 
 function getWorkDaysByPeriod() {
@@ -233,6 +224,8 @@ function updateHeroContextLabel() {
 }
 
 // ==================== TÀI XẾ CONDITION BANNER ====================
+const TAIXE_ORDER_THRESHOLD = 1500;
+
 function renderTaiXeConditionBanner(delOrders, taiXeAmount) {
   const banner = document.getElementById('taixeConditionBanner');
   if (!banner) return;
@@ -313,23 +306,12 @@ function renderRow(weightLabel, orders, tier, typeClass) {
 
 function buildOverviewSuggestion(type, label, orders, tier, weightKey) {
   const isZero = orders === 0;
-
-  // Lấy/Hoàn: không hiện dải 0 đơn
   if (isZero && type !== 'del') return null;
-
-  // Dải nặng có ≥1 đơn → ẩn (cả 3 loại)
   if (!isZero && HEAVY_WEIGHT_KEYS.includes(weightKey)) return null;
-
-  // Không có mốc tiếp → ẩn
   if (!tier.next || !isFinite(tier.matched.maxA)) return null;
 
-  const need = isZero
-    ? (tier.next.min || 1)
-    : (tier.matched.maxA - orders);
-  const gain = isZero
-    ? tier.next.pt
-    : (tier.next.pt - tier.matched.pt);
-
+  const need = isZero ? (tier.next.min || 1) : (tier.matched.maxA - orders);
+  const gain = isZero ? tier.next.pt : (tier.next.pt - tier.matched.pt);
   const hasPoint = orders > 0 && tier.matched.pt > 0;
 
   const badge = type === 'del' ? 'G' : type === 'pick' ? 'L' : 'H';
@@ -348,7 +330,6 @@ function buildOverviewSuggestion(type, label, orders, tier, weightKey) {
 function renderOverviewSuggestions(sorted) {
   const ovBox = document.getElementById('overviewMilestoneList');
   const btnViewAll = document.getElementById('viewAllOpportunitiesBtn');
-
   if (!ovBox) return;
 
   if (sorted.length === 0) {
@@ -396,13 +377,7 @@ export function getAllOppFilter() {
   return _allOppFilter;
 }
 
-
 // ==================== TAB EMPTY STATES ====================
-/**
- * Toggle empty state cho 3 tab Giao/Lấy/Hoàn.
- * - Nếu 1 loại có 0 bản ghi trong period hiện tại → hiện empty state, ẩn table card.
- * - Nếu có ≥1 bản ghi → ẩn empty state, hiện table card.
- */
 function _renderTabEmptyStates(agg) {
   const configs = [
     { emptyId: 'delEmptyState',  cardId: 'delTableCard',  hasData: agg.del.some(v => v > 0) },
@@ -417,7 +392,6 @@ function _renderTabEmptyStates(agg) {
     if (cardEl)  cardEl.style.display  = hasData ? 'block' : 'none';
   });
 }
-
 
 // ==================== UPDATE ALL VIEWS ====================
 function _updateAllViews() {
@@ -457,20 +431,15 @@ function _updateAllViews() {
   }
 
   delTbody.innerHTML = dRows; pickTbody.innerHTML = pRows; retTbody.innerHTML = rRows;
-
-  // ⭐ Toggle empty state cho 3 tab Giao/Lấy/Hoàn
   _renderTabEmptyStates(agg);
 
-  // Sort 3 tầng
   ovSuggBuf.sort((a, b) => {
     if (a.hasPoint !== b.hasPoint) return a.hasPoint ? 1 : -1;
-
     if (!a.hasPoint && !b.hasPoint) {
       if (a.gain !== b.gain) return b.gain - a.gain;
       if (a.need !== b.need) return a.need - b.need;
       return 0;
     }
-
     if (a.need !== b.need) return a.need - b.need;
     if (a.gain !== b.gain) return b.gain - a.gain;
     return 0;
@@ -492,7 +461,8 @@ function _updateAllViews() {
   const rawBase = delPts + pickPts + retPts;
 
   const rankCfg   = getRankConfig(state.currentMonth);
-  const rankBonus = Math.round(rawBase * rankCfg.bonus);
+  // ⭐ BỎ MATH.ROUND
+  const rankBonus = rawBase * rankCfg.bonus;
 
   const salaryDays  = getSalaryDaysForPeriod();
   const workDays    = getWorkDaysByPeriod();
@@ -509,8 +479,18 @@ function _updateAllViews() {
     monthlyTotal += manualTaiXe;
   }
 
+  // ⭐ BỎ MATH.ROUND ĐỂ GIỮ SỐ LẺ
   const perDay = salaryDays > 0 ? monthlyTotal / salaryDays : 0;
-  const incomeAccumulated = Math.round(perDay * displayDays);
+  const incomeAccumulated = perDay * displayDays;
+
+  // ⭐ TÍNH CHI TIẾT 3 KHOẢN
+  const perDayBase = salaryDays > 0 ? salaryBase / salaryDays : 0;
+  const perDayBuuCuc = salaryDays > 0 ? manualBuuCuc / salaryDays : 0;
+  const perDayTaiXe = salaryDays > 0 ? manualTaiXe / salaryDays : 0;
+  
+  const incomeBaseAcc = perDayBase * displayDays;
+  const incomeBuuCucAcc = perDayBuuCuc * displayDays;
+  const incomeTaiXeAcc = delOrders >= TAIXE_ORDER_THRESHOLD ? (perDayTaiXe * displayDays) : 0;
 
   const finalTotal  = rawBase + rankBonus + incomeAccumulated;
   const totalOrders = total.del + total.pick + total.ret;
@@ -530,10 +510,11 @@ function _updateAllViews() {
   if (heroEmptyEl) heroEmptyEl.style.display = isEmpty ? 'block' : 'none';
 
   if (!isEmpty) {
-    if (heroValueEl) heroValueEl.innerHTML = `${_fmt(finalTotal)} <span class="hero-value-unit">Điểm</span>`;
-    if (heroBaseEl)   heroBaseEl.innerText   = _fmt(rawBase);
-    if (heroBonusEl)  heroBonusEl.innerText  = '+' + _fmt(rankBonus);
-    if (heroIncomeEl) heroIncomeEl.innerText = '+' + _fmt(incomeAccumulated);
+    // ⭐ DÙNG _fmt2 ĐỂ HIỂN THỊ SỐ LẺ
+    if (heroValueEl) heroValueEl.innerHTML = `${_fmt2(finalTotal)} <span class="hero-value-unit">Điểm</span>`;
+    if (heroBaseEl)   heroBaseEl.innerText   = _fmt2(rawBase);
+    if (heroBonusEl)  heroBonusEl.innerText  = '+' + _fmt2(rankBonus);
+    if (heroIncomeEl) heroIncomeEl.innerText = '+' + _fmt2(incomeAccumulated);
   }
 
   updateHeroContextLabel();
@@ -604,9 +585,20 @@ function _updateAllViews() {
   if (incomeDayCount) {
     incomeDayCount.innerText = `${workDaysText}/${salaryDays} công · ${progressPct}%`;
   }
-  if (incomePerDay)   incomePerDay.innerText   = formatPts(Math.round(perDay)) + '/công';
+  
+  // ⭐ DÙNG formatPts (ĐÃ BỎ LÀM TRÒN)
+  if (incomePerDay)   incomePerDay.innerText   = formatPts(perDay) + '/công';
   if (incomeTotal)    incomeTotal.innerText    = '+' + formatPts(incomeAccumulated);
   if (incomeTotalInner) incomeTotalInner.innerText = '+' + formatPts(incomeAccumulated);
+
+  // ⭐ RENDER 3 DÒNG CHI TIẾT
+  const elBase = document.getElementById('incomeDetailBase');
+  const elBuuCuc = document.getElementById('incomeDetailBuuCuc');
+  const elTaiXe = document.getElementById('incomeDetailTaiXe');
+
+  if (elBase) elBase.innerText = formatPts(incomeBaseAcc);
+  if (elBuuCuc) elBuuCuc.innerText = formatPts(incomeBuuCucAcc);
+  if (elTaiXe) elTaiXe.innerText = formatPts(incomeTaiXeAcc);
 
   if (progressFill) {
     progressFill.style.width = progressPct + '%';
@@ -645,7 +637,6 @@ export function renderHistory() {
   const prevScroll = container.scrollTop;
   container.innerHTML = '';
 
-  // Toggle active state cho nút 📅 Ngày
   const dateBtn = document.getElementById('histFilterDateBtn');
   if (dateBtn) {
     const f = getHistFilters();
