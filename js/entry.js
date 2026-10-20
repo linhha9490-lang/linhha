@@ -33,6 +33,12 @@ export async function saveRecord() {
   const editId   = document.getElementById('editEntryId').value;
   const editType = document.getElementById('editEntryType').value;
 
+  // Có id nhưng thiếu loại → trạng thái form hỏng; nếu để rơi xuống nhánh "thêm mới" sẽ tạo bản ghi rác
+  if (editId && !editType) {
+    await showAlert('Không xác định được loại bản ghi đang sửa.\n\nHãy đóng form và mở lại.', { title: 'Lỗi', okText: 'Đóng' });
+    return;
+  }
+
   if (editId && editType) {
     // === SỬA ===
     const numId  = parseInt(editId, 10);

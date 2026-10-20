@@ -1,5 +1,5 @@
 import { state, persistData, getSalaryConfig, hasSalaryConfig, getRankConfig } from './state.js';
-import { WEIGHT_LABELS, WEIGHT_KEYS, TABLE_4_DATA, TABLE_5_DATA, TABLE_6_DATA } from './config.js';
+import { WEIGHT_LABELS, WEIGHT_KEYS, TABLE_4_DATA, TABLE_5_DATA, TABLE_6_DATA, TAIXE_ORDER_THRESHOLD } from './config.js';
 import { lookupTier, aggregateWeights, isDateInCurrentPeriod } from './calc.js';
 import { formatPts, formatDateDisplay, _fmt, getCurrentMonthIso, getTodayIso } from './utils.js';
 
@@ -233,8 +233,6 @@ function updateHeroContextLabel() {
 }
 
 // ==================== TÀI XẾ CONDITION BANNER ====================
-const TAIXE_ORDER_THRESHOLD = 1500;
-
 function renderTaiXeConditionBanner(delOrders, taiXeAmount) {
   const banner = document.getElementById('taixeConditionBanner');
   if (!banner) return;

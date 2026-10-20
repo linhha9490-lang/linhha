@@ -5,14 +5,13 @@ import {
   persistSalaryByMonth,
   persistRankByMonth
 } from './state.js';
-import { STORAGE_KEYS, WEIGHT_KEYS } from './config.js';
+import { STORAGE_KEYS, WEIGHT_KEYS, AUTO_BACKUP_DAYS } from './config.js';
 import { getTodayIso, generateId } from './utils.js';
 import { updateAllViews } from './render.js';
 import { initRankUI, initRegionUI, showToast } from './ui.js';
 import { showAlert, showConfirm, showChoice } from './dialog.js';
 
 // ==================== CONFIG ====================
-const AUTO_BACKUP_DAYS = 7;
 const AUTO_BACKUP_LAST_KEY = 'spx_last_auto_backup';
 const AUTO_BACKUP_SNOOZE_KEY = 'spx_auto_backup_snooze';
 

@@ -4,8 +4,8 @@
 // =============================================================
 
 import { state } from './state.js';
-import { WEIGHT_KEYS } from './config.js';
-import { getTodayIso, formatDateDisplay, generateId, isValidIsoDate } from './utils.js';
+import { WEIGHT_KEYS, OCR_TIMEOUT_MS, MAX_CANVAS_PX } from './config.js';
+import { getTodayIso, formatDateDisplay, generateId, isValidIsoDate, escapeHtml } from './utils.js';
 import { openAddModal, openEditModal, switchModalSubTab, showToast, isAutoSaveOCR } from './ui.js';
 import { updateAllViews } from './render.js';
 import { showConfirm, showAlert } from './dialog.js';
@@ -20,7 +20,6 @@ export { getOcrCacheStats, initOcrCache, refreshOcrCacheStats } from './ocr-cach
 // ==================== CONFIG ====================
 const DISABLE_AUTO_SAVE = false;
 const DRY_RUN_OCR       = false;
-const OCR_TIMEOUT_MS    = 60000;
 
 // ==================== ABORT CONTROLLER ====================
 let _ocrAbortController = null;
@@ -52,12 +51,16 @@ function _clearAbortController(ctrl) {
 
 // ==================== TESSERACT WORKER ====================
 let _tessLibPromise = null;
+// Ghim phiên bản cụ thể: worker + core lấy theo phiên bản của thư viện này nên chỉ cần ghim ở đây
+// (và cùng URL trong sw.js). Đổi phiên bản → sửa cả hai nơi.
+const TESSERACT_LIB_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+
 function ensureTesseractLib() {
   if (window.Tesseract) return Promise.resolve();
   if (_tessLibPromise) return _tessLibPromise;
   _tessLibPromise = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.src = TESSERACT_LIB_URL;
     s.async = true;
     s.onload = resolve;
     s.onerror = () => {
@@ -243,7 +246,6 @@ async function preprocessImage(rawDataUrl, options = {}, signal) {
       try {
         _checkAborted(signal);
         // Giới hạn diện tích canvas (iOS Safari ~16.7M px; vượt là canvas rỗng/crash) khi ảnh gốc lớn
-        const MAX_CANVAS_PX = 14000000;
         let scale = Math.min(4, upscale);
         const srcPx = img.width * img.height;
         if (srcPx * scale * scale > MAX_CANVAS_PX) scale = Math.sqrt(MAX_CANVAS_PX / srcPx);
@@ -608,8 +610,19 @@ function _buildDateIso(day, month, year) {
 
 function extractDateStrict(text) {
   const cleanText = text.replace(/,/g, '.');
+  const isDigit = ch => ch !== undefined && ch >= '0' && ch <= '9';
+  const endOf = m => m.index + m[0].length;
 
+  // 1) ISO: yyyy-mm-dd / yyyy/mm/dd / yyyy.mm.dd — xét TRƯỚC để "2026-10-17" không bị đọc thành "26-10-17"
+  for (const im of cleanText.matchAll(/(20\d{2})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/g)) {
+    if (isDigit(cleanText[endOf(im)])) continue;   // là đầu của số dài hơn
+    const iso = _buildDateIso(parseInt(im[3], 10), parseInt(im[2], 10), parseInt(im[1], 10));
+    if (iso) return iso;
+  }
+
+  // 2) dd/mm/yyyy (hoặc yy)
   for (const fm of cleanText.matchAll(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4}|\d{2})/g)) {
+    if (isDigit(cleanText[fm.index - 1])) continue;   // là đuôi của số khác (vd phần năm của "2026-10-17")
     const day = parseInt(fm[1], 10);
     const month = parseInt(fm[2], 10);
     let year = parseInt(fm[3], 10);
@@ -619,14 +632,17 @@ function extractDateStrict(text) {
     if (iso) return iso;
   }
 
+  // 3) "Ngày dd/mm"
   const dayMatch = cleanText.match(/(?:ngày|ngay)\s*[-–:]?\s*(\d{1,2})[\/\-\.](\d{1,2})/i);
   if (dayMatch) {
     const iso = _buildDateIso(parseInt(dayMatch[1], 10), parseInt(dayMatch[2], 10));
     if (iso) return iso;
   }
 
-  // Mẫu "dd/mm" trần (không có chữ "ngày"): dễ lẫn với dải cân dạng "2-4", "12-15" và số thập phân
-  for (const m of cleanText.matchAll(/\b(\d{1,2})([\/\-\.])(\d{1,2})\b/g)) {
+  // 4) "dd/mm" trần (không có chữ "ngày"): dễ lẫn với dải cân "2-4", "12-15" và số có dấu chấm ngăn cách
+  //    ("1.500"). Chỉ loại bằng cách xét chữ số liền kề — KHÔNG dùng \b vì OCR hay dính chữ ("Giao06/10").
+  for (const m of cleanText.matchAll(/(\d{1,2})([\/\-\.])(\d{1,2})/g)) {
+    if (isDigit(cleanText[m.index - 1]) || isDigit(cleanText[endOf(m)])) continue;
     const day = parseInt(m[1], 10);
     const month = parseInt(m[3], 10);
     const noLeadingZero = m[1] === String(day) && m[3] === String(month);
@@ -1247,7 +1263,7 @@ async function processOneFile(file, signal, onProgress) {
 }
 
 // ==================== FIX WARNING BANNER ====================
-function showFixWarning(fixInfo, detectedType) {
+function showFixWarning(fixInfo) {
   const old = document.getElementById('fixWarningBanner');
   if (old) old.remove();
 
@@ -1330,7 +1346,7 @@ export function fillModalFromResult(item) {
 
   // ⭐ Hiện banner cảnh báo nếu post-process đã fix số
   if (r.fixInfo) {
-    showFixWarning(r.fixInfo, r.detectedColorType);
+    showFixWarning(r.fixInfo);
   }
 
   const prefix = r.detectedColorType === 'del' ? 'del_inp'
@@ -1712,25 +1728,6 @@ export function applyConfidenceHighlight(confMap, detectedType) {
   });
 }
 
-export function clearAllConfidenceHighlights() {
-  // ⭐ Xóa banner fix (nếu có)
-  const fixBanner = document.getElementById('fixWarningBanner');
-  if (fixBanner) fixBanner.remove();
-
-  const prefixes = ['del_inp', 'pick_inp', 'ret_inp'];
-  const keys = ['0_2','2_4','4_6','6_8','8_10','10_12','12_15','over_15'];
-  prefixes.forEach(pfx => keys.forEach(k => {
-    const input = document.getElementById(pfx + '_' + k);
-    if (!input) return;
-    input.classList.remove('conf-high', 'conf-mid', 'conf-low', 'conf-suspect');
-    const parent = input.closest('.weight-input-item');
-    if (parent) {
-      const badge = parent.querySelector('.conf-badge');
-      if (badge) badge.remove();
-    }
-  }));
-}
-
 // ==================== LIGHTBOX ====================
 export function openOcrLightbox() {
   const src = document.getElementById('ocrPreviewImg').src;
@@ -1780,13 +1777,6 @@ export async function handleSharedImage(sharedFiles) {
   await _runOcrFromFiles(images, false);
 }
 
-// ==================== ESCAPE HTML ====================
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({
-    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
-  }[c]));
-}
-
 // ==================== INTERNAL: showSummaryToast ====================
 function showSummaryToast(saved, dup, need, delay = 0) {
   const parts = [];
@@ -1799,3 +1789,10 @@ function showSummaryToast(saved, dup, need, delay = 0) {
   const type = need > 0 ? 'warning' : (dup > 0 ? 'warning' : 'success');
   setTimeout(() => showToast(msg, type, 3500), delay);
 }
+
+// Chỉ phục vụ unit test (tests/) — app không dùng
+export const __test = {
+  parseOcrText, extractDateStrict, postProcessFixDigits, identifyRangeKey,
+  setBatch(list) { batchResults = list; },
+  getBatch() { return batchResults; }
+};

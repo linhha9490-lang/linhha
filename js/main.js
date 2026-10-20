@@ -2,7 +2,7 @@ import { state, loadState, persistSettings, persistPeriodState, getSalaryConfig,
 import { initTheme, toggleTheme } from './theme.js';
 import { getTodayIso, getCurrentMonthIso } from './utils.js';
 import {
-  switchMainTab, switchModalSubTab, setOverviewFilter, setHistFilter,
+  switchMainTab, switchModalSubTab, setHistFilter,
   setRankTier, initRankUI,
   initRegionUI,
   setPeriodMode, periodPrev, periodNext, openPeriodPicker,
@@ -439,7 +439,7 @@ Object.assign(window, {
   setAutoSaveOCR,
   toggleAutoSaveOCR,
   toggleAutoSaveOCRFromMenu,
-  switchMainTab, switchModalSubTab, setOverviewFilter, setHistFilter,
+  switchMainTab, switchModalSubTab, setHistFilter,
   setRankTier,
   syncRankUIForCurrentMonth,
 

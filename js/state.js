@@ -308,6 +308,7 @@ export function persistData() {
   let json;
   try { json = JSON.stringify(state.appData); } catch { return false; }
   if (json === _lastSerialized) return false;
+  // Lần ghi đầu tiên sau khi mở app trả về false (cố ý): mở app không được kích hoạt auto-backup Cloud.
   const first = _lastSerialized === null;
   try {
     localStorage.setItem(STORAGE_KEYS.records, json);
