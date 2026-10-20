@@ -1,7 +1,6 @@
 import { state, persistData, getSalaryConfig, hasSalaryConfig, getRankConfig } from './state.js';
 import { WEIGHT_LABELS, WEIGHT_KEYS, TABLE_4_DATA, TABLE_5_DATA, TABLE_6_DATA } from './config.js';
 import { lookupTier, aggregateWeights, isDateInCurrentPeriod } from './calc.js';
-// ⭐ Import thêm _fmt2
 import { formatPts, formatDateDisplay, _fmt, _fmt2, getCurrentMonthIso, getTodayIso } from './utils.js';
 
 const NEED_HIGHLIGHT = 'color:#dc2626;font-size:1.35em;font-weight:900;letter-spacing:0.5px;';
@@ -184,7 +183,7 @@ function getRegionThresholds(region) {
   return { full: 60, half: 30 };
 }
 
-// ⭐ ĐÃ CẬP NHẬT HỆ SỐ 25.99935 CỦA SPX
+// ⭐ Hệ số 25.99935 của SPX
 function getSalaryDaysForPeriod() {
   const monthStr = state.currentMonth || getCurrentMonthIso();
   const month = parseInt(monthStr.split('-')[1], 10);
@@ -483,14 +482,16 @@ function _updateAllViews() {
   const perDay = salaryDays > 0 ? monthlyTotal / salaryDays : 0;
   const incomeAccumulated = perDay * displayDays;
 
-  // ⭐ TÍNH CHI TIẾT 3 KHOẢN
+  // ⭐ TÍNH CHI TIẾT 3 KHOẢN VÀ LÀM TRÒN NẾU ĐỦ CÔNG
+  const isFullMonth = displayDays >= salaryDays;
+  
   const perDayBase = salaryDays > 0 ? salaryBase / salaryDays : 0;
   const perDayBuuCuc = salaryDays > 0 ? manualBuuCuc / salaryDays : 0;
   const perDayTaiXe = salaryDays > 0 ? manualTaiXe / salaryDays : 0;
   
-  const incomeBaseAcc = perDayBase * displayDays;
-  const incomeBuuCucAcc = perDayBuuCuc * displayDays;
-  const incomeTaiXeAcc = delOrders >= TAIXE_ORDER_THRESHOLD ? (perDayTaiXe * displayDays) : 0;
+  const incomeBaseAcc = isFullMonth ? salaryBase : (perDayBase * displayDays);
+  const incomeBuuCucAcc = isFullMonth ? manualBuuCuc : (perDayBuuCuc * displayDays);
+  const incomeTaiXeAcc = (delOrders >= TAIXE_ORDER_THRESHOLD) ? (isFullMonth ? manualTaiXe : (perDayTaiXe * displayDays)) : 0;
 
   const finalTotal  = rawBase + rankBonus + incomeAccumulated;
   const totalOrders = total.del + total.pick + total.ret;
@@ -574,16 +575,14 @@ function _updateAllViews() {
     }
   }
 
-  const workDaysText = Number.isInteger(displayDays)
-    ? displayDays.toString()
-    : displayDays.toFixed(1);
-
   const progressPct = salaryDays > 0
     ? Math.min(100, Math.round((displayDays / salaryDays) * 100))
     : 0;
 
+  // ⭐ HIỂN THỊ NGÀY CÔNG ĐẸP (26/26 THAY VÌ 26.0/25.99935)
   if (incomeDayCount) {
-    incomeDayCount.innerText = `${workDaysText}/${salaryDays} công · ${progressPct}%`;
+    const displaySalaryDays = Math.round(salaryDays);
+    incomeDayCount.innerText = `${Math.round(displayDays)}/${displaySalaryDays} công · ${progressPct}%`;
   }
   
   // ⭐ DÙNG formatPts (ĐÃ BỎ LÀM TRÒN)
