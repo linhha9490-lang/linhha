@@ -511,11 +511,22 @@ function _updateAllViews() {
   if (heroEmptyEl) heroEmptyEl.style.display = isEmpty ? 'block' : 'none';
 
   if (!isEmpty) {
-    // ⭐ DÙNG _fmt2 ĐỂ HIỂN THỊ SỐ LẺ
-    if (heroValueEl) heroValueEl.innerHTML = `${_fmt2(finalTotal)} <span class="hero-value-unit">Điểm</span>`;
-    if (heroBaseEl)   heroBaseEl.innerText   = _fmt2(rawBase);
-    if (heroBonusEl)  heroBonusEl.innerText  = '+' + _fmt2(rankBonus);
-    if (heroIncomeEl) heroIncomeEl.innerText = '+' + _fmt2(incomeAccumulated);
+  // Hàm tách số lẻ ra để làm mờ
+  const formatFancy = (val) => {
+    const str = _fmt2(val); // Ví dụ: "11.345,922"
+    const parts = str.split(','); // Tách thành ["11.345", "922"]
+    if (parts.length > 1) {
+      return `${parts[0]}<span class="hero-decimal">,${parts[1]}</span>`;
+    }
+    return str;
+  };
+
+  if (heroValueEl) heroValueEl.innerHTML = `${formatFancy(finalTotal)} <span class="hero-value-unit">Điểm</span>`;
+  
+  // Các mục nhỏ bên trong (Gốc, Thưởng, Thu nhập) giữ nguyên hoặc cũng dùng formatFancy
+  if (heroBaseEl)   heroBaseEl.innerHTML   = formatFancy(rawBase);
+  if (heroBonusEl)  heroBonusEl.innerHTML  = '+' + formatFancy(rankBonus);
+  if (heroIncomeEl) heroIncomeEl.innerHTML = '+' + formatFancy(incomeAccumulated);
   }
 
   updateHeroContextLabel();
