@@ -72,7 +72,7 @@ export async function testCloudConnection() {
     });
     if (!res.ok) throw new Error('Token sai hoặc hết hạn');
     const user = await res.json();
-    localStorage.setItem('spx_gh_token', token);
+    try { localStorage.setItem('spx_gh_token', token); } catch (storageError) { throw new Error('Token hợp lệ nhưng không lưu được trên thiết bị. Hãy kiểm tra bộ nhớ/trình duyệt.'); }
     if (input) input.value = '';
     updateTokenUI();
     setStatus(`✅ OK — ${user.login}`, 'ok');
@@ -155,12 +155,12 @@ export async function pushToCloud(opts) {
 
     const gist = await res.json();
     commitTypedToken(input, token);   // token đã dùng được → lúc này mới lưu
-    localStorage.setItem('spx_gist_id', gist.id);
+    try { localStorage.setItem('spx_gist_id', gist.id); } catch (e) { console.warn('[Cloud] Không lưu được Gist ID:', e); }
     const gistInput = document.getElementById('gistIdInput');
     if (gistInput) gistInput.value = gist.id;
 
     const now = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    localStorage.setItem('spx_last_backup', now);
+    try { localStorage.setItem('spx_last_backup', now); } catch (e) { console.warn('[Cloud] Không lưu được thời điểm backup:', e); }
     setStatus(`✅ Đã backup lúc ${now}`, 'ok');
   } catch (e) {
     setStatus(`❌ Lỗi: ${e.message}`, 'err');
@@ -284,8 +284,13 @@ export function initCloudUI() {
   if (toggle) {
     toggle.checked = autoBackup;
     toggle.onchange = () => {
-      localStorage.setItem('spx_auto_backup', toggle.checked ? '1' : '0');
-      setStatus(toggle.checked ? '✅ Đã bật auto-backup' : 'Đã tắt auto-backup', toggle.checked ? 'ok' : 'idle');
+      try {
+        localStorage.setItem('spx_auto_backup', toggle.checked ? '1' : '0');
+        setStatus(toggle.checked ? '✅ Đã bật auto-backup' : 'Đã tắt auto-backup', toggle.checked ? 'ok' : 'idle');
+      } catch (e) {
+        toggle.checked = !toggle.checked;
+        setStatus('❌ Không lưu được tùy chọn auto-backup trên thiết bị', 'err');
+      }
     };
   }
 

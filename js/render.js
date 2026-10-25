@@ -1,7 +1,7 @@
 import { state, persistData, getSalaryConfig, hasSalaryConfig, getRankConfig } from './state.js';
-import { WEIGHT_LABELS, WEIGHT_KEYS, TABLE_4_DATA, TABLE_5_DATA, TABLE_6_DATA } from './config.js';
+import { WEIGHT_LABELS, WEIGHT_KEYS, TABLE_4_DATA, TABLE_5_DATA, TABLE_6_DATA, TAIXE_ORDER_THRESHOLD } from './config.js';
 import { lookupTier, aggregateWeights, isDateInCurrentPeriod } from './calc.js';
-import { formatPts, formatDateDisplay, _fmt, _fmt2, getCurrentMonthIso, getTodayIso } from './utils.js';
+import { formatPts, formatDateDisplay, _fmt, getCurrentMonthIso, getTodayIso } from './utils.js';
 
 const NEED_HIGHLIGHT = 'color:#dc2626;font-size:1.35em;font-weight:900;letter-spacing:0.5px;';
 const TOP_OVERVIEW_COUNT = 4;
@@ -20,6 +20,9 @@ let _allOppFilter = 'del';
 let _allOppCache = [];
 
 // ============ History filters (đơn giản hóa) ============
+// Chỉ còn: { date, types }
+// - date: 'YYYY-MM-DD' hoặc null (null = theo tháng đang xem)
+// - types: { delivery, pickup, return }
 const DEFAULT_HIST_FILTERS = {
   date: null,
   types: { delivery: true, pickup: true, return: true }
@@ -67,13 +70,21 @@ export function hasActiveHistFilters() {
   return false;
 }
 
+/**
+ * Filter 1 record theo state hiện tại.
+ * - Nếu có `date` → chỉ khớp ngày đó.
+ * - Nếu không → khớp period đang xem (tháng).
+ */
 function recordPassesHistoryFilter(r, type) {
   if (!_histFilters.types[type]) return false;
+
   if (_histFilters.date) {
     return r.date === _histFilters.date;
   }
   return isDateInCurrentPeriod(r.date, state.periodMode, state.currentMonth, state.currentDate);
 }
+// ============ /History filters ============
+
 
 // ==================== REMINDER BANNER ====================
 function computeMissedDays() {
@@ -111,6 +122,51 @@ function computeMissedDays() {
 function formatMissedDate(iso) {
   const p = iso.split('-');
   return `${p[2]}/${p[1]}`;
+}
+
+// ==================== NGÀY CHƯA CẬP NHẬT (tab Nhật ký) ====================
+/**
+ * Lấy mảng chi tiết các ngày bị thiếu trong tháng (kèm thứ trong tuần)
+ */
+export function getMissedDatesList(now = new Date()) {
+  const cm = state.currentMonth || getCurrentMonthIso();
+  const [y, m] = cm.split('-').map(Number);
+  const nowMonthIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  if (cm > nowMonthIso) return [];
+
+  const recorded = new Set();
+  ['delivery', 'pickup', 'return'].forEach(type => {
+    state.appData[type].forEach(r => {
+      if (r.date.startsWith(cm + '-')) recorded.add(r.date);
+    });
+  });
+  if (recorded.size === 0) return [];
+
+  const endDay = (cm === nowMonthIso) ? now.getDate() - 1 : new Date(y, m, 0).getDate();
+  const missed = [];
+  const daysOfWeek = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+
+  for (let d = 1; d <= endDay; d++) {
+    const iso = `${cm}-${String(d).padStart(2, '0')}`;
+    if (!recorded.has(iso)) {
+      const dateObj = new Date(y, m - 1, d);
+      missed.push({
+        iso,
+        day: d,
+        month: m,
+        year: y,
+        dayOfWeek: daysOfWeek[dateObj.getDay()]
+      });
+    }
+  }
+  return missed;
+}
+
+/**
+ * Đếm tổng số ngày bị thiếu
+ */
+export function getMissedDaysInCurrentMonth(now = new Date()) {
+  return getMissedDatesList(now).length;
 }
 
 export function renderReminderBanner() {
@@ -183,11 +239,10 @@ function getRegionThresholds(region) {
   return { full: 60, half: 30 };
 }
 
-// ⭐ Hệ số 25.99935 của SPX
 function getSalaryDaysForPeriod() {
   const monthStr = state.currentMonth || getCurrentMonthIso();
   const month = parseInt(monthStr.split('-')[1], 10);
-  return month === 2 ? 23.999 : 25.99935; 
+  return month === 2 ? 24 : 26;
 }
 
 function getWorkDaysByPeriod() {
@@ -223,8 +278,6 @@ function updateHeroContextLabel() {
 }
 
 // ==================== TÀI XẾ CONDITION BANNER ====================
-const TAIXE_ORDER_THRESHOLD = 1500;
-
 function renderTaiXeConditionBanner(delOrders, taiXeAmount) {
   const banner = document.getElementById('taixeConditionBanner');
   if (!banner) return;
@@ -305,12 +358,23 @@ function renderRow(weightLabel, orders, tier, typeClass) {
 
 function buildOverviewSuggestion(type, label, orders, tier, weightKey) {
   const isZero = orders === 0;
+
+  // Lấy/Hoàn: không hiện dải 0 đơn
   if (isZero && type !== 'del') return null;
+
+  // Dải nặng có ≥1 đơn → ẩn (cả 3 loại)
   if (!isZero && HEAVY_WEIGHT_KEYS.includes(weightKey)) return null;
+
+  // Không có mốc tiếp → ẩn
   if (!tier.next || !isFinite(tier.matched.maxA)) return null;
 
-  const need = isZero ? (tier.next.min || 1) : (tier.matched.maxA - orders);
-  const gain = isZero ? tier.next.pt : (tier.next.pt - tier.matched.pt);
+  const need = isZero
+    ? (tier.next.min || 1)
+    : (tier.matched.maxA - orders);
+  const gain = isZero
+    ? tier.next.pt
+    : (tier.next.pt - tier.matched.pt);
+
   const hasPoint = orders > 0 && tier.matched.pt > 0;
 
   const badge = type === 'del' ? 'G' : type === 'pick' ? 'L' : 'H';
@@ -329,10 +393,11 @@ function buildOverviewSuggestion(type, label, orders, tier, weightKey) {
 function renderOverviewSuggestions(sorted) {
   const ovBox = document.getElementById('overviewMilestoneList');
   const btnViewAll = document.getElementById('viewAllOpportunitiesBtn');
+
   if (!ovBox) return;
 
   if (sorted.length === 0) {
-    ovBox.innerHTML = `<div style="font-size:11.5px;color:var(--text-3);text-align:center;padding:16px">Không có cơ hội tăng điểm nào trong kỳ này</div>`;
+    ovBox.innerHTML = `<div style="font-size:11.5px;color:var(--text-3);text-align:center;padding:16px">Chưa có cơ hội tăng điểm nào trong kỳ này.</div>`;
     if (btnViewAll) btnViewAll.style.display = 'none';
     return;
   }
@@ -353,7 +418,7 @@ export function renderAllOpportunitiesList() {
   const filtered = _allOppCache.filter(o => o.type === _allOppFilter);
   if (filtered.length === 0) {
     const label = _allOppFilter === 'del' ? 'Giao' : _allOppFilter === 'pick' ? 'Lấy' : 'Hoàn';
-    box.innerHTML = `<div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 16px">Không có cơ hội tăng điểm cho loại ${label}</div>`;
+    box.innerHTML = `<div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 16px">Không có cơ hội tăng điểm cho mục ${label}.</div>`;
     return;
   }
   box.innerHTML = filtered.map(o => o.html).join('');
@@ -376,7 +441,13 @@ export function getAllOppFilter() {
   return _allOppFilter;
 }
 
+
 // ==================== TAB EMPTY STATES ====================
+/**
+ * Toggle empty state cho 3 tab Giao/Lấy/Hoàn.
+ * - Nếu 1 loại có 0 bản ghi trong period hiện tại → hiện empty state, ẩn table card.
+ * - Nếu có ≥1 bản ghi → ẩn empty state, hiện table card.
+ */
 function _renderTabEmptyStates(agg) {
   const configs = [
     { emptyId: 'delEmptyState',  cardId: 'delTableCard',  hasData: agg.del.some(v => v > 0) },
@@ -391,6 +462,7 @@ function _renderTabEmptyStates(agg) {
     if (cardEl)  cardEl.style.display  = hasData ? 'block' : 'none';
   });
 }
+
 
 // ==================== UPDATE ALL VIEWS ====================
 function _updateAllViews() {
@@ -430,15 +502,20 @@ function _updateAllViews() {
   }
 
   delTbody.innerHTML = dRows; pickTbody.innerHTML = pRows; retTbody.innerHTML = rRows;
+
+  // ⭐ Toggle empty state cho 3 tab Giao/Lấy/Hoàn
   _renderTabEmptyStates(agg);
 
+  // Sort 3 tầng
   ovSuggBuf.sort((a, b) => {
     if (a.hasPoint !== b.hasPoint) return a.hasPoint ? 1 : -1;
+
     if (!a.hasPoint && !b.hasPoint) {
       if (a.gain !== b.gain) return b.gain - a.gain;
       if (a.need !== b.need) return a.need - b.need;
       return 0;
     }
+
     if (a.need !== b.need) return a.need - b.need;
     if (a.gain !== b.gain) return b.gain - a.gain;
     return 0;
@@ -450,7 +527,7 @@ function _updateAllViews() {
     const ovBox = document.getElementById('overviewMilestoneList');
     const btnViewAll = document.getElementById('viewAllOpportunitiesBtn');
     if (ovBox) {
-      ovBox.innerHTML = `<div style="font-size:11.5px;color:var(--text-3);text-align:center;padding:16px">Chưa có dữ liệu kỳ này. Bấm menu → Nhập sản lượng để bắt đầu.</div>`;
+      ovBox.innerHTML = `<div style="font-size:11.5px;color:var(--text-3);text-align:center;padding:16px">Chưa có dữ liệu kỳ này. Hãy quét ảnh hoặc nhập sản lượng để bắt đầu nhé!</div>`;
     }
     if (btnViewAll) btnViewAll.style.display = 'none';
   } else {
@@ -460,8 +537,7 @@ function _updateAllViews() {
   const rawBase = delPts + pickPts + retPts;
 
   const rankCfg   = getRankConfig(state.currentMonth);
-  // ⭐ BỎ MATH.ROUND
-  const rankBonus = rawBase * rankCfg.bonus;
+  const rankBonus = Math.round(rawBase * rankCfg.bonus);
 
   const salaryDays  = getSalaryDaysForPeriod();
   const workDays    = getWorkDaysByPeriod();
@@ -478,20 +554,8 @@ function _updateAllViews() {
     monthlyTotal += manualTaiXe;
   }
 
-  // ⭐ BỎ MATH.ROUND ĐỂ GIỮ SỐ LẺ
   const perDay = salaryDays > 0 ? monthlyTotal / salaryDays : 0;
-  const incomeAccumulated = perDay * displayDays;
-
-  // ⭐ TÍNH CHI TIẾT 3 KHOẢN VÀ LÀM TRÒN NẾU ĐỦ CÔNG
-  const isFullMonth = displayDays >= salaryDays;
-  
-  const perDayBase = salaryDays > 0 ? salaryBase / salaryDays : 0;
-  const perDayBuuCuc = salaryDays > 0 ? manualBuuCuc / salaryDays : 0;
-  const perDayTaiXe = salaryDays > 0 ? manualTaiXe / salaryDays : 0;
-  
-  const incomeBaseAcc = isFullMonth ? salaryBase : (perDayBase * displayDays);
-  const incomeBuuCucAcc = isFullMonth ? manualBuuCuc : (perDayBuuCuc * displayDays);
-  const incomeTaiXeAcc = (delOrders >= TAIXE_ORDER_THRESHOLD) ? (isFullMonth ? manualTaiXe : (perDayTaiXe * displayDays)) : 0;
+  const incomeAccumulated = Math.round(perDay * displayDays);
 
   const finalTotal  = rawBase + rankBonus + incomeAccumulated;
   const totalOrders = total.del + total.pick + total.ret;
@@ -511,22 +575,10 @@ function _updateAllViews() {
   if (heroEmptyEl) heroEmptyEl.style.display = isEmpty ? 'block' : 'none';
 
   if (!isEmpty) {
-  // Hàm tách số lẻ ra để làm mờ
-  const formatFancy = (val) => {
-    const str = _fmt2(val); // Ví dụ: "11.345,922"
-    const parts = str.split(','); // Tách thành ["11.345", "922"]
-    if (parts.length > 1) {
-      return `${parts[0]}<span class="hero-decimal">,${parts[1]}</span>`;
-    }
-    return str;
-  };
-
-  if (heroValueEl) heroValueEl.innerHTML = `${formatFancy(finalTotal)} <span class="hero-value-unit">Điểm</span>`;
-  
-  // Các mục nhỏ bên trong (Gốc, Thưởng, Thu nhập) giữ nguyên hoặc cũng dùng formatFancy
-  if (heroBaseEl)   heroBaseEl.innerHTML   = formatFancy(rawBase);
-  if (heroBonusEl)  heroBonusEl.innerHTML  = '+' + formatFancy(rankBonus);
-  if (heroIncomeEl) heroIncomeEl.innerHTML = '+' + formatFancy(incomeAccumulated);
+    if (heroValueEl) heroValueEl.innerHTML = `${_fmt(finalTotal)} <span class="hero-value-unit">Điểm</span>`;
+    if (heroBaseEl)   heroBaseEl.innerText   = _fmt(rawBase);
+    if (heroBonusEl)  heroBonusEl.innerText  = '+' + _fmt(rankBonus);
+    if (heroIncomeEl) heroIncomeEl.innerText = '+' + _fmt(incomeAccumulated);
   }
 
   updateHeroContextLabel();
@@ -586,29 +638,20 @@ function _updateAllViews() {
     }
   }
 
+  const workDaysText = Number.isInteger(displayDays)
+    ? displayDays.toString()
+    : displayDays.toFixed(1);
+
   const progressPct = salaryDays > 0
     ? Math.min(100, Math.round((displayDays / salaryDays) * 100))
     : 0;
 
-  // ⭐ HIỂN THỊ NGÀY CÔNG ĐẸP (26/26 THAY VÌ 26.0/25.99935)
   if (incomeDayCount) {
-    const displaySalaryDays = Math.round(salaryDays);
-    incomeDayCount.innerText = `${Math.round(displayDays)}/${displaySalaryDays} công · ${progressPct}%`;
+    incomeDayCount.innerText = `${workDaysText}/${salaryDays} công · ${progressPct}%`;
   }
-  
-  // ⭐ DÙNG formatPts (ĐÃ BỎ LÀM TRÒN)
-  if (incomePerDay)   incomePerDay.innerText   = formatPts(perDay) + '/công';
+  if (incomePerDay)   incomePerDay.innerText   = formatPts(Math.round(perDay)) + '/công';
   if (incomeTotal)    incomeTotal.innerText    = '+' + formatPts(incomeAccumulated);
   if (incomeTotalInner) incomeTotalInner.innerText = '+' + formatPts(incomeAccumulated);
-
-  // ⭐ RENDER 3 DÒNG CHI TIẾT
-  const elBase = document.getElementById('incomeDetailBase');
-  const elBuuCuc = document.getElementById('incomeDetailBuuCuc');
-  const elTaiXe = document.getElementById('incomeDetailTaiXe');
-
-  if (elBase) elBase.innerText = formatPts(incomeBaseAcc);
-  if (elBuuCuc) elBuuCuc.innerText = formatPts(incomeBuuCucAcc);
-  if (elTaiXe) elTaiXe.innerText = formatPts(incomeTaiXeAcc);
 
   if (progressFill) {
     progressFill.style.width = progressPct + '%';
@@ -647,10 +690,31 @@ export function renderHistory() {
   const prevScroll = container.scrollTop;
   container.innerHTML = '';
 
+  // Toggle active state cho nút 📅 Ngày
   const dateBtn = document.getElementById('histFilterDateBtn');
   if (dateBtn) {
     const f = getHistFilters();
     dateBtn.classList.toggle('active', !!f.date);
+  }
+
+  // Banner "chưa cập nhật N ngày" (ẩn khi đang xem chi tiết 1 ngày)
+  const missedBanner = document.getElementById('missedDaysBanner');
+  const missedText = document.getElementById('missedDaysText');
+  
+  if (missedBanner && missedText) {
+    const missedCount = getHistFilters().date ? 0 : getMissedDaysInCurrentMonth();
+    if (missedCount > 0) {
+      missedText.innerHTML = `Chưa cập nhật <b>${missedCount} ngày</b>`;
+      missedBanner.style.display = 'flex';
+    } else {
+      missedBanner.style.display = 'none';
+    }
+  }
+
+  const btnDeleteMonth = document.getElementById('btnDeleteMonth');
+  if (btnDeleteMonth) {
+    const [by, bm] = (state.currentMonth || getCurrentMonthIso()).split('-');
+    btnDeleteMonth.textContent = `🗑️ Xóa dữ liệu tháng ${parseInt(bm, 10)}/${by}`;
   }
 
   let list = [];
@@ -667,8 +731,8 @@ export function renderHistory() {
 
   if (list.length === 0) {
     const emptyMsg = hasActiveHistFilters()
-      ? 'Không có bản ghi khớp bộ lọc hiện tại.'
-      : 'Chưa có bản ghi nào trong kỳ được chọn.';
+      ? 'Không có bản ghi nào khớp bộ lọc.'
+      : 'Chưa có bản ghi nào trong kỳ này.';
     container.innerHTML = `<div style="font-size:11.5px;color:var(--text-3);text-align:center;padding:20px">${emptyMsg}</div>`;
     return;
   }

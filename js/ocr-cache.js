@@ -37,7 +37,7 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
 
     req.onupgradeneeded = e => {
-      const db = e.target.result;
+      const db = /** @type {IDBOpenDBRequest} */ (e.target).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'key' });
         store.createIndex('by_ts', 'ts', { unique: false });

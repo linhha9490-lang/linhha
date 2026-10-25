@@ -1,9 +1,10 @@
 import { state, persistData } from './state.js';
 import { WEIGHT_KEYS, WEIGHT_SUFFIXES } from './config.js';
-import { sanitizeInt, generateId, getTodayIso, formatDateDisplay, deepClone, isValidIsoDate } from './utils.js';
+import { sanitizeInt, generateId, getTodayIso, getCurrentMonthIso, formatDateDisplay, isValidIsoDate } from './utils.js';
 import { closeModal, showToast } from './ui.js';
 import { updateAllViews } from './render.js';
-import { hasBatchPending, backToBatch, completeActiveBatchItem } from './ocr.js';
+import { hasBatchPending, backToBatch, completeActiveBatchItem } from './ocr/index.js';
+import { offerUndo } from './undo.js';
 import { showAlert, showConfirm, showChoice } from './dialog.js';
 import { downloadBackupFile } from './backup.js';
 
@@ -146,8 +147,9 @@ export async function deleteRecord(type, id) {
   });
   if (!ok) return;
 
-  arr.splice(idx, 1);
+  const [removed] = arr.splice(idx, 1);
   updateAllViews();
+  offerUndo([{ type, record: removed, index: idx }], 'Đã xóa bản ghi');
 }
 
 // ⭐ Xóa toàn bộ — chỉ HỎI, không bắt buộc backup
@@ -207,6 +209,8 @@ export async function clearAllHistory() {
   // ═══════════════════════════════════════════════════════════
   //  Tiến hành xóa
   // ═══════════════════════════════════════════════════════════
+  const removedAll = ['delivery', 'pickup', 'return'].flatMap(t =>
+    state.appData[t].map((record, index) => ({ type: t, record, index })));
   state.appData = { delivery: [], pickup: [], return: [] };
   try {
     localStorage.removeItem('spx_backup_vault');
@@ -219,5 +223,61 @@ export async function clearAllHistory() {
   const finalMsg = choice === 'backup_then_delete'
     ? `✅ Đã lưu backup và xóa ${total} bản ghi`
     : `⚠️ Đã xóa ${total} bản ghi (không backup)`;
-  showToast(finalMsg, choice === 'backup_then_delete' ? 'success' : 'warning', 3000);
+  offerUndo(removedAll, finalMsg);
+}
+
+/**
+ * Xóa toàn bộ dữ liệu (Giao + Lấy + Hoàn) của tháng đang xem. Dữ liệu các tháng khác giữ nguyên.
+ */
+export async function deleteCurrentMonthHistory() {
+  const cm = state.currentMonth || getCurrentMonthIso();
+  const [y, m] = cm.split('-');
+  const label = `${parseInt(m, 10)}/${y}`;
+  const inMonth = r => r.date.startsWith(cm + '-');
+
+  const count = ['delivery', 'pickup', 'return'].reduce((n, t) => n + state.appData[t].filter(inMonth).length, 0);
+  if (count === 0) {
+    await showAlert(`Không có dữ liệu trong tháng ${label} để xóa.`, { title: 'Không có dữ liệu', okText: 'Đóng' });
+    return;
+  }
+
+  const choice = await showChoice(
+    `Thao tác này sẽ xóa vĩnh viễn ${count} bản ghi của tháng ${label}.\n\n` +
+    `Dữ liệu các tháng khác được giữ nguyên.\n\n` +
+    `Bạn có muốn sao lưu dữ liệu trước khi xóa không?`,
+    {
+      title: `⚠️ Xóa dữ liệu tháng ${label}`,
+      icon: '⚠️',
+      buttons: [
+        { id: 'cancel',             text: '← Hủy bỏ',          variant: 'ghost'   },
+        { id: 'backup_then_delete', text: '📥 Sao lưu & Xóa',  variant: 'primary' },
+        { id: 'delete_now',         text: '🗑️ Xóa vĩnh viễn', variant: 'danger'  }
+      ]
+    }
+  );
+  if (choice === 'cancel') return;
+
+  if (choice === 'backup_then_delete') {
+    // Phải gọi ngay trong luồng của thao tác bấm nút để trình duyệt cho phép tải file
+    downloadBackupFile('SPX_BeforeDeleteMonth');
+    await new Promise(r => setTimeout(r, 800));
+    const confirmDelete = await showConfirm(
+      `File sao lưu đã được tải xuống chưa?\n\n` +
+      `Chọn "Xác nhận xóa" để hoàn tất, hoặc "Hủy" nếu bạn chưa thấy file.`,
+      { title: '🚨 Xác nhận xóa', okText: 'Xác nhận xóa', cancelText: 'Hủy', danger: true }
+    );
+    if (!confirmDelete) return;
+  }
+
+  const removedMonth = [];
+  ['delivery', 'pickup', 'return'].forEach(t => {
+    state.appData[t] = state.appData[t].filter((r, index) => {
+      if (!inMonth(r)) return true;
+      removedMonth.push({ type: t, record: r, index });
+      return false;
+    });
+  });
+
+  updateAllViews();
+  offerUndo(removedMonth, `Đã xóa dữ liệu tháng ${label} (${removedMonth.length} bản ghi)`);
 }

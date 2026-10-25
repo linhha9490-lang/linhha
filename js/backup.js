@@ -100,7 +100,7 @@ export function downloadBackupFile(prefix = 'SPX_Data') {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30000);   // không thu hồi ngay: một số trình duyệt hủy tải
+  setTimeout(() => URL.revokeObjectURL(url), 1500);   // giữ URL đủ lâu để trình duyệt bắt đầu tải, tránh giữ timer 30 giây
   markBackupDone();
 }
 
@@ -423,7 +423,7 @@ export async function importData(event) {
     input.value = '';   // cho phép chọn lại đúng file đó lần sau
     let parsed;
     try {
-      parsed = JSON.parse(e.target.result);
+      parsed = JSON.parse(String(e.target.result));
     } catch {
       await showAlert('Không đọc được file sao lưu!', { title: 'Lỗi file', okText: 'Đóng' });
       return;

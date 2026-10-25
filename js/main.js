@@ -1,6 +1,5 @@
-import { state, loadState, persistSettings, persistPeriodState, getSalaryConfig, setSalaryConfig } from './state.js';
+import { state, loadState, persistSettings, getSalaryConfig, setSalaryConfig } from './state.js';
 import { initTheme, toggleTheme } from './theme.js';
-import { getTodayIso, getCurrentMonthIso } from './utils.js';
 import {
   switchMainTab, switchModalSubTab, setHistFilter,
   setRankTier, initRankUI,
@@ -20,7 +19,8 @@ import {
   openHistoryDatePicker, applyHistoryDateFilter, clearHistoryDateFilter,
   openAllOpportunitiesModal, closeAllOpportunitiesModal,
   showToast,
-  isAutoSaveOCR, setAutoSaveOCR, toggleAutoSaveOCR, toggleAutoSaveOCRFromMenu
+  isAutoSaveOCR, setAutoSaveOCR, toggleAutoSaveOCR, toggleAutoSaveOCRFromMenu,
+  openMissedDaysModal, closeMissedDaysModal, handleMissedDateAction // <-- Import thêm 3 hàm mới
 } from './ui.js';
 import {
   handleOcrImage, preloadTesseractWorker,
@@ -28,18 +28,19 @@ import {
   openBatchOcrModal, closeBatchOcrModal, appendBatchFiles,
   saveBatchAll, importBatchItem, removeBatchItem,
   backToBatch, hasBatchPending, showBackToBatchBtn,
-  clearOcrCache, getOcrCacheStats,
+  clearOcrCache,
   initOcrCache, refreshOcrCacheStats,
   handleSharedImage
-} from './ocr.js';
-import { saveRecord, deleteRecord, clearAllHistory } from './entry.js';
+} from './ocr/index.js';
+import { saveRecord, deleteRecord, clearAllHistory, deleteCurrentMonthHistory } from './entry.js';
+import { undoLastDelete } from './undo.js';
 import {
   copyDataJson, openPasteJsonModal, closePasteJsonModal,
   confirmImportJsonString, exportData, importData, restoreFromVault,
   checkAutoBackup, downloadBackupFile
 } from './backup.js';
 import {
-  updateAllViews, renderReminderBanner, dismissReminderBanner,
+  updateAllViews, dismissReminderBanner,
   setAllOppFilter
 } from './render.js';
 import {
@@ -54,8 +55,9 @@ import { initErrorHandler } from './error-handler.js';
 // ================ AUTO-CLEAR INPUT ================
 function attachAutoClearInputs() {
   document.querySelectorAll('.auto-clear').forEach(input => {
-    input.addEventListener('focus', function () { if (this.value === '0') this.value = ''; });
-    input.addEventListener('blur',  function () { if (this.value.trim() === '') this.value = '0'; });
+    const el = /** @type {HTMLInputElement} */ (input);
+    el.addEventListener('focus', () => { if (el.value === '0') el.value = ''; });
+    el.addEventListener('blur',  () => { if (el.value.trim() === '') el.value = '0'; });
   });
 }
 
@@ -99,7 +101,7 @@ function _findDuplicates() {
 async function _cleanupDuplicates() {
   const dups = _findDuplicates();
   if (dups.length === 0) {
-    await showAlert('Không có bản ghi trùng lặp!', { title: 'Không tìm thấy', okText: 'Đã hiểu' });
+    await showAlert('Tuyệt vời! Không có bản ghi nào bị trùng lặp.', { title: 'Thông báo', okText: 'Đóng' });
     return;
   }
   const summary = { Giao: 0, Lấy: 0, Hoàn: 0 };
@@ -149,7 +151,7 @@ async function _clearOcrCacheFromSettings() {
     await _updateOcrCacheStats();
   } catch (e) {
     console.error('[OCR Cache] Lỗi xóa:', e);
-    await showAlert('Không xóa được cache: ' + e.message, { title: 'Lỗi', okText: 'Đóng' });
+    await showAlert('Không xóa được cache quét ảnh: ' + e.message, { title: 'Lỗi', okText: 'Đóng' });
   }
 }
 
@@ -179,7 +181,7 @@ function _showIncomeInfo() {
     '• Miền Trung: ≥60 = 1 công, ≥30 = 0.5 công\n' +
     '• TP.HCM & HN: ≥80 = 1 công, ≥40 = 0.5 công\n\n' +
     '⚡ Lương được lưu RIÊNG theo từng tháng.\n' +
-    'Chuyển tháng để cấu hình tháng đó.',
+    'Chuyển tháng để cấu hình tháng đó nhé.',
     { title: 'Cách tính thu nhập', okText: 'Đã hiểu' }
   );
 }
@@ -198,11 +200,15 @@ function _openOcrPicker() {
 
 // ================ AUTO-UPDATE ================
 let swRegistration = null;
-let currentAppVersion = null;
+let currentAppVersion = /** @type {HTMLMetaElement|null} */ (document.querySelector('meta[name="spx-app-version"]'))?.content || null;
 let waitingWorker = null;
 
 async function registerSW() {
   if (!('serviceWorker' in navigator)) return;
+  // Lần mở ĐẦU TIÊN (chưa có Service Worker nào kiểm soát trang): SW vừa cài xong sẽ báo SW_UPDATED,
+  // nhưng trang này vốn đã chạy đúng bản mới nhất → tải lại ở đây chỉ làm mất toast, form đang nhập,
+  // thao tác đang làm trong vài giây đầu. Chỉ bỏ qua đúng 1 lần đó; các bản cập nhật sau vẫn tải lại bình thường.
+  let ignoreFirstActivation = !navigator.serviceWorker.controller;
   try {
     swRegistration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
     console.log('[PWA] SW registered:', swRegistration.scope);
@@ -221,6 +227,7 @@ async function registerSW() {
 
     navigator.serviceWorker.addEventListener('message', e => {
       if (e.data && e.data.type === 'SW_UPDATED') {
+        if (ignoreFirstActivation) { ignoreFirstActivation = false; return; }
         if (document.querySelector('.modal-shade.active')) { showUpdateBanner(); return; }
         window.location.reload();
       }
@@ -234,7 +241,7 @@ async function checkVersion(manual = false) {
   try {
     const res = await fetch(`./version.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) {
-      if (manual) showToast('⚠️ Không kiểm tra được — thử lại sau', 'warning', 2500);
+      if (manual) showToast('⚠️ Không kiểm tra được — thử lại sau nhé', 'warning', 2500);
       return;
     }
     const data = await res.json();
@@ -246,7 +253,7 @@ async function checkVersion(manual = false) {
 
     if (!currentAppVersion) {
       currentAppVersion = serverVersion;
-      console.log('[Update] Current version:', serverVersion);
+      console.warn('[Update] Thiếu version nhúng trong HTML; tạm dùng version server.');
       if (manual) showToast(`ℹ️ Bản hiện tại: ${serverVersion}`, 'info', 2500);
       return;
     }
@@ -262,10 +269,10 @@ async function checkVersion(manual = false) {
       showUpdateBanner(serverVersion);
       if (manual) showToast(`🎉 Có bản mới ${serverVersion}!`, 'success', 2500);
     } else if (manual) {
-      showToast(`✅ Đã là bản mới nhất (${serverVersion})`, 'success', 2500);
+      showToast(`✅ Bạn đang dùng bản mới nhất (${serverVersion})`, 'success', 2500);
     }
   } catch (e) {
-    if (manual) showToast('⚠️ Không kiểm tra được — kiểm tra mạng', 'warning', 2500);
+    if (manual) showToast('⚠️ Không kiểm tra được — kiểm tra kết nối mạng nhé', 'warning', 2500);
   }
 }
 
@@ -414,15 +421,15 @@ async function _runShareTargetIfNeeded() {
     console.warn('[ShareTarget] Không có file trong cache');
     showAlert(
       'Không đọc được ảnh từ chia sẻ.\n\n' +
-      'Hãy:\n' +
-      '• Share lại từ Gallery\n' +
+      'Hãy thử:\n' +
+      '• Chia sẻ lại từ Thư viện ảnh\n' +
       '• Hoặc mở app → bấm 📷 để chọn ảnh thủ công',
       { title: '📤 Chia sẻ ảnh', okText: 'Đã hiểu' }
     );
     return;
   }
 
-  console.log(`[ShareTarget] Nhận ${files.length} file — bắt đầu OCR`);
+  console.log(`[ShareTarget] Nhận ${files.length} file — bắt đầu quét`);
   try {
     await handleSharedImage(files);
   } catch (e) {
@@ -474,6 +481,11 @@ Object.assign(window, {
 
   openOcrPicker: _openOcrPicker,
 
+  // MISSED DAYS MODAL
+  openMissedDaysModal,
+  closeMissedDaysModal,
+  handleMissedDateAction,
+
   // REGION
   changeRegion: function(regionKey, el) {
     try {
@@ -482,7 +494,7 @@ Object.assign(window, {
       if (oldRegion === regionKey) return;
 
       state.region = regionKey;
-      localStorage.setItem('spx_region', regionKey);
+      try { localStorage.setItem('spx_region', regionKey); } catch (e) { console.warn('[Storage] Không lưu được khu vực:', e); }
 
       document.querySelectorAll('.region-pill').forEach(p => p.classList.remove('active'));
       if (el) el.classList.add('active');
@@ -509,7 +521,7 @@ Object.assign(window, {
   openBatchOcrModal, closeBatchOcrModal, appendBatchFiles,
   saveBatchAll, importBatchItem, removeBatchItem,
   backToBatch, hasBatchPending, showBackToBatchBtn,
-  saveRecord, deleteRecord, clearAllHistory,
+  saveRecord, deleteRecord, clearAllHistory, deleteCurrentMonthHistory, undoLastDelete,
   copyDataJson, openPasteJsonModal, closePasteJsonModal,
   confirmImportJsonString, exportData, importData, restoreFromVault,
   downloadBackupFile,
@@ -524,7 +536,7 @@ Object.assign(window, {
     const salary = parseFloat(document.getElementById('salaryBaseInput').value) || 0;
 
     setSalaryConfig(state.currentMonth, { base: salary, buuCuc, taiXe });
-    localStorage.setItem('spx_region', state.region);
+    try { localStorage.setItem('spx_region', state.region); } catch (e) { console.warn('[Storage] Không lưu được khu vực:', e); }
 
     clearTimeout(manualPointsTimer);
     clearTimeout(salaryTimer);
@@ -532,7 +544,7 @@ Object.assign(window, {
 
     const [y, m] = state.currentMonth.split('-');
     const taiXeNote = taiXe > 0
-      ? `\n⚡ Tài xế chỉ được cộng khi đơn Giao ≥ 1.500/tháng.`
+      ? `\n⚡ Nhớ nhé: Tài xế chỉ được cộng khi đơn Giao ≥ 1.500/tháng.`
       : '';
 
     showAlert(
@@ -542,7 +554,7 @@ Object.assign(window, {
       `• Tài xế:  ${taiXe.toLocaleString('vi-VN')}\n` +
       `• Khu vực: ${state.region === 'hcm_hn' ? 'TP.HCM & HN' : 'Miền Trung'}` +
       taiXeNote,
-      { title: 'Đã lưu cấu hình', okText: 'OK' }
+      { title: 'Đã lưu cấu hình', okText: 'Tuyệt vời' }
     );
   },
 
@@ -569,9 +581,27 @@ let _storageWarned = false;
 window.addEventListener('spx:storage-error', () => {
   if (_storageWarned) return;
   _storageWarned = true;
-  showAlert('Bộ nhớ thiết bị đầy hoặc bị chặn — số liệu mới CHƯA được lưu.\n\nHãy xuất file sao lưu rồi giải phóng bộ nhớ.',
+  showAlert('Bộ nhớ thiết bị đầy hoặc bị chặn — số liệu mới CHƯA được lưu.\n\nHãy xuất file sao lưu rồi giải phóng bộ nhớ nhé.',
     { title: '⚠️ Không lưu được', okText: 'Đã hiểu' });
 });
+
+// ================ PWA SHORTCUT LAUNCH ================
+function _handleShortcutLaunch() {
+  try {
+    const url = new URL(window.location.href);
+    const action = url.searchParams.get('action');
+    if (action !== 'ocr' && action !== 'history') return;
+    url.searchParams.delete('action');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    if (action === 'history') {
+      openHistoryTab();
+      return;
+    }
+    _openOcrPicker();
+  } catch (e) {
+    console.warn('[PWA] Không xử lý được shortcut:', e);
+  }
+}
 
 // ================ INIT ================
 (async function init() {
@@ -599,9 +629,9 @@ window.addEventListener('spx:storage-error', () => {
   window.addEventListener('focus', _maybeAutoCheck);
 
   _runShareTargetIfNeeded();
+  _handleShortcutLaunch();
 
-  // ⭐ AUTO BACKUP CHECK — sau 5 giây (đợi app render xong)
-  // Nếu đang bận (form/modal đang mở hoặc OCR đang chạy) thì lùi lại 60 giây, tối đa 5 lần — tránh hộp thoại bật đè lúc đang nhập
+  // ⭐ AUTO BACKUP CHECK — sau 5 giây
   const _tryAutoBackup = (left) => {
     const busy = document.querySelector('.modal-shade.active') ||
                  document.getElementById('ocrLoadingOverlay')?.style.display === 'flex';
