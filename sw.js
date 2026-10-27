@@ -5,7 +5,7 @@
 // ⚠️ MỖI LẦN SỬA FILE TRONG CORE → BUMP CACHE VERSION
 // =============================================================
 
-const CACHE       = 'spx-tracker-v2.8';    // tự sinh bởi scripts/sync.mjs (nguồn: version.json)
+const CACHE       = 'spx-tracker-v2.9';    // tự sinh bởi scripts/sync.mjs (nguồn: version.json)
 const TESS_CACHE  = 'spx-tesseract-v1';    // giữ nguyên — Tesseract không đổi
 const SHARE_CACHE = 'spx-shared-files';    // giữ nguyên — dữ liệu tạm
 
@@ -63,7 +63,10 @@ const TESS_URL_PREFIXES = [
 // ==================== INSTALL ====================
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(CORE))
+    // cache:'reload' = BỎ QUA bộ nhớ đệm HTTP của trình duyệt khi tải file precache.
+    // Nếu không, hosting gửi `Cache-Control: max-age=600` (GitHub Pages) có thể khiến cache của bản MỚI
+    // chứa file CŨ (đã gặp: HTML/JS mới nhưng style.css cũ → thiếu định dạng). Test: e2e/sw-update.spec.mjs
+    caches.open(CACHE).then(c => c.addAll(CORE.map(url => new Request(url, { cache: 'reload' }))))
     // KHÔNG skipWaiting — chờ user bấm "Cập nhật"
   );
 });
