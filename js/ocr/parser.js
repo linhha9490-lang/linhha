@@ -51,7 +51,9 @@ export function parseOcrText(cleanText) {
     })
     .join('\n');
 
-  const totalRegex = /T[oôổ]ng\s*[:\-]?\s*(\d{1,6})/i;
+  // "Tổng N đơn hàng". OCR hay đọc sai dấu: "T6ng" (ổ→6), "Téng", "Tong"… → cho phép đúng 1 ký tự bất kỳ giữa T và "ng"
+  // (1 ký tự để KHÔNG khớp "Tháng 10": giữa T và "ng" có tới 2 ký tự).
+  const totalRegex = /T[^\s]ng\s*[:\-]?\s*(\d{1,6})/i;
   const totalMatch = text.match(totalRegex);
   let expectedTotal = totalMatch ? parseInt(totalMatch[1], 10) : null;
   if (!Number.isFinite(expectedTotal)) expectedTotal = null;
