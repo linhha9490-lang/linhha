@@ -6,6 +6,7 @@ import { test, expect } from './fixtures.mjs';
 const CASES = [
   // [file, tab đúng (nhìn trên ảnh), ghi chú]
   ['spx-giao-02-10.jpg',            'del',  'Đã giao hàng — 6 dải cân'],
+  ['spx-giao-24-10.jpg',            'del',  'Đã giao hàng — 5 dải cân'],
   ['spx-lay-04-10.jpg',             'pick', 'Đã lấy'],
   ['spx-lay-24-10.jpg',             'pick', 'Đã lấy'],
   ['spx-lay-24-10-dao-dong.jpg',    'pick', 'Đã lấy — có "đảo động" camera ở thanh trạng thái'],
