@@ -1,7 +1,33 @@
-# SPX Tracker — v2.9
+# SPX Tracker — v2.10
 
-Bản đầy đủ: giải nén rồi thay toàn bộ vào repo (xem `README.md` cho lệnh hằng ngày).
-Số phiên bản **v2.9** nằm ở `version.json`; `sw.js` (CACHE + CORE) và `index.html` (meta) do `npm run sync` tự sinh.
+Bản đầy đủ: giải nén rồi thay toàn bộ vào repo (xem `README.md`). Phiên bản **v2.10** ở `version.json`; `sw.js` + `index.html` do `npm run sync` tự sinh.
+
+## v2.10 — sửa lỗi "không mở được Hướng dẫn sử dụng"
+**Nguyên nhân (lỗi của mình khi ghép file ở v2.7):** `guide.html` trong bộ file bạn gửi là **bản sao của `index.html`**
+(cùng tiêu đề "Theo Dõi Sản Lượng & Điểm SPX", nạp `js/main.js`). Mình đã nhận nhầm đó là "trang hướng dẫn được thiết kế lại" và lấy nguyên văn
+mà không mở ra xem → bấm "Hướng dẫn sử dụng" chỉ mở lại chính app, trông như không mở được.
+**Sửa:** khôi phục trang hướng dẫn thật và cập nhật cho đúng app hiện tại: mục *Xóa dữ liệu & Hoàn tác*, mục mới *Ngày chưa cập nhật*,
+*Ảnh bị điền sai tab*, *Giao diện hiện thô sau khi cập nhật*, khuyến nghị token 90 ngày; bỏ Google Fonts (offline không tải được).
+**Chống tái diễn:** 5 test tĩnh (đúng là trang hướng dẫn, tự chứa, cấu trúc/đánh số, nội dung khớp app) + 3 e2e trên Chromium
+(mở từ Menu, mở được từng mục, quay lại app, **mở được khi offline**, tìm kiếm). Mình đã thử đúng lỗi gốc (thay `guide.html` bằng bản sao `index.html`): 3/5 test tĩnh và 3/3 e2e đều đỏ.
+
+> ⚠️ Nếu repo của bạn đang có `guide.html` là bản sao `index.html`, hãy **ghi đè bằng file trong gói này**.
+
+### Kiểm chứng trên dữ liệu THẬT của bạn (file sao lưu 27/10, 156 bản ghi)
+Con số app hiển thị **khớp tuyệt đối** với bản tính độc lập viết lại bằng Python từ quy tắc trong code: tháng 10 = 13.942 điểm,
+tháng 9 = 6.744, tháng 8 = 21.338 (gồm thưởng hạng và lương ngày). Lưu ý: kiểm tra này chứng minh code chạy đúng như quy tắc đã viết;
+việc quy tắc có đúng chính sách của SPX hay không thì mình không kiểm được.
+Nhận xét dữ liệu: tháng 9 chỉ có 9/30 ngày (có thể đang thiếu số liệu — banner "Chưa cập nhật" sẽ nhắc 21 ngày); không có bản ghi trùng, id duy nhất.
+
+### Thêm vào bộ test
+- Ảnh SPX thật thứ 8 (`spx-giao-24-10.jpg`): đủ 3 tab của ngày 24/10. Có e2e quét ĐỦ 3 ảnh cùng lúc → mỗi loại 1 bản ghi đúng.
+- e2e luồng quét ảnh đầy đủ trong Chromium (Tesseract giả trả văn bản có sẵn): chọn ảnh → nhận diện tab → parser → lưu; chạy trên 8 ảnh thật.
+  Dùng lại cách nhận diện tab cũ (chia 3 phần đều) thì các ca ảnh "Hoàn" đỏ — đúng lỗi "Hoàn bị lưu vào Lấy" (đã thử ở bản v2.9).
+
+### Chưa làm (đang để cho bản sau)
+- Truy cập: ~14 ô nhập/nút chưa có tên cho trình đọc màn hình; chữ xám phụ (`--text-3`) 2,56:1 trên nền trắng (chuẩn AA cần 4,5:1);
+  chữ trắng trên nút cam #ff5722 chỉ 3,2:1; một số nút lọc cao 26–30px (khuyến nghị ≥ 44px). Đây là quyết định thiết kế nên mình chưa tự đổi.
+- Dữ liệu lưu trong `localStorage` (+ một bản sao "vault"): đủ dùng nhiều năm với mật độ hiện tại, nhưng nên chuyển IndexedDB (tầng 2).
 
 ## v2.9 — sửa 2 lỗi bạn gặp (đo trên ảnh/thiết bị thật của bạn)
 Kiểm chứng: 156 test Node, `tsc` 0 lỗi, 23 kịch bản e2e trên Chromium 141 thật (chạy lặp 2 lần song song: đạt hết).
@@ -26,8 +52,9 @@ ngay sau khi phát hành, cache của bản MỚI có thể chứa file CŨ (ví
 **Sửa (`sw.js`):** tải file precache với `cache: 'reload'` (bỏ qua cache HTTP). Test e2e dựng một "hosting" có max-age 600,
 phát hành bản mới ngay sau đó và kiểm cache mới chứa CSS mới — **đỏ trên bản cũ, xanh trên bản mới**.
 > Lưu ý: mình tái hiện được lỗi cùng loại chứ không chứng minh được đó là nguyên nhân DUY NHẤT trên máy bạn.
-> Khi cập nhật lên v2.9, Service Worker mới tự tải sạch toàn bộ file. Nếu giao diện vẫn thô: DevTools → Application → Clear site data
-> (hoặc gỡ và cài lại PWA) một lần.
+> Khi cập nhật lên v2.9+, Service Worker mới tự tải sạch toàn bộ file. Nếu giao diện vẫn thô: **BACKUP TRƯỚC** (Menu → Backup & Cloud → tải file),
+> rồi mới xóa dữ liệu trang web / gỡ cài lại PWA — hai thao tác này **xóa luôn số liệu trên máy**. (Bản ghi chú trước đây của mình thiếu cảnh báo này.)
+> Cách không mất dữ liệu: DevTools → Application → Cache Storage → chỉ xóa các mục `spx-tracker-*`.
 
 ### 3. Parser đọc dòng "Tổng" bị OCR làm hỏng dấu
 Engine đọc "Tổng" thành `T6ng`/`Téng`/`Tong` → trước đây không nhận ra Tổng, và con số trong dòng đó (vd 119) bị lấy nhầm
